@@ -1,0 +1,218 @@
+/*
+ * The entire visual system.
+ *
+ * A word on a dark field and nothing else. No cards, no shadows, no animation
+ * beyond an 80 ms opacity dip to acknowledge an answer: the loop is meant to be
+ * run thousands of times, and every pixel that is not the word is something
+ * the eye has to skip past on each one.
+ */
+
+:root {
+  /*
+   * Ivory text on the original near-black. The background stays #0b0b0c.
+   * Secondary text is a light grey rather than a dark one: grey-on-black at
+   * low contrast was the single most tiring thing about the first version.
+   */
+  --bg: #0b0b0c;
+  --fg: #f1ebdf;
+  --dim: #bdb5a7;       /* secondary text: definitions, captions, labels */
+  --dimmer: #948c7f;    /* tertiary text: part of speech, axis labels */
+  --rule: #3d3a35;      /* hairlines only - never used for text */
+  --corner-rest: 0.62;
+
+  --accent: #93b8e8;
+  --ok: #74c58a;
+  --warn: #e4b857;
+  --bad: #e5806a;
+
+
+  /*
+   * Three dictionary voices, all system serifs so nothing has to be downloaded
+   * or precached (this is an offline PWA with `font-src 'self'`):
+   *
+   *   head   headwords and titles - an old-style book face with presence at
+   *          display size.
+   *   text   definitions and running prose - a sturdy reading serif built for
+   *          long passages at small sizes.
+   *   label  section heads, part of speech, table headings - a transitional
+   *          face set in small caps, the way a printed dictionary marks its
+   *          apparatus.
+   *
+   * Each stack lists the macOS/iOS face first, then the Windows one (Sitka and
+   * Cambria ship with Windows 10+), then the Linux fallbacks.
+   */
+  --font-head: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', 'P052', Georgia, serif;
+  --font-text: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, 'Noto Serif', 'DejaVu Serif', Georgia, serif;
+  --font-label: Baskerville, 'Baskerville Old Face', 'Hoefler Text', Constantia, 'Libre Baskerville', Georgia, serif;
+  /* Only for strings that must be copied exactly, like a shell command. */
+  --mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Menlo, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+  --bg: #f6f1e7;
+  --fg: #1b1814;
+  --dim: #4f483f;
+  --dimmer: #6f675b;
+  --rule: #d6ccba;
+  --accent: #2f5d94;
+  --ok: #2f7d45;
+  --warn: #9a6d12;
+  --bad: #a8442c;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-text);
+  font-weight: 400;
+  font-size: 17px;
+  /* Old-style figures sit inside running text the way a book sets them. */
+  font-variant-numeric: oldstyle-nums;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app { height: 100%; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+a { color: var(--accent); text-underline-offset: 0.15em; }
+
+/* The apparatus voice: small caps, slightly tracked. */
+.label {
+  font-family: var(--font-label);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.06em;
+}
+
+/* Corner chrome: present, never loud. Fades in on approach. */
+.corner {
+  position: fixed;
+  z-index: 10;
+  opacity: var(--corner-rest);
+  transition: opacity 120ms ease;
+  font-family: var(--font-label);
+  font-variant-caps: all-small-caps;
+  font-size: 1.02rem;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  padding: 0.8rem 1.1rem;
+  user-select: none;
+}
+.corner:hover, .corner:focus-visible, .corner.active { opacity: 1; color: var(--fg); }
+.corner.tl { top: env(safe-area-inset-top, 0); left: env(safe-area-inset-left, 0); }
+.corner.tr { top: env(safe-area-inset-top, 0); right: env(safe-area-inset-right, 0); }
+.corner.bl { bottom: env(safe-area-inset-bottom, 0); left: env(safe-area-inset-left, 0); }
+.corner.br { bottom: env(safe-area-inset-bottom, 0); right: env(safe-area-inset-right, 0); }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 2.5rem 1.5rem 5rem;
+}
+
+.sheet {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-family: var(--font-head);
+  font-size: 2rem;
+  font-weight: 400;
+  margin: 0 0 2rem;
+}
+h2 {
+  font-family: var(--font-label);
+  font-variant-caps: all-small-caps;
+  font-size: 1.15rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin: 2.6rem 0 0.8rem;
+}
+p { line-height: 1.6; }
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+}
+.muted { color: var(--dim); }
+.num { font-variant-numeric: lining-nums tabular-nums; }
+.mono { font-family: var(--mono); font-size: 0.9em; }
+
+.choice { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.choice button {
+  padding: 0.3rem 0.85rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--dim);
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+.choice button:hover { color: var(--fg); border-color: var(--dimmer); }
+.choice button[aria-pressed='true'] {
+  color: var(--fg);
+  border-color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+input[type='number'], input[type='text'] {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: lining-nums tabular-nums;
+  padding: 0.3rem 0.1rem;
+  width: 12rem;
+}
+input:focus { outline: none; border-bottom-color: var(--fg); }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: lining-nums tabular-nums; }
+th, td { text-align: right; padding: 0.4rem 0.2rem; font-weight: 400; }
+th:first-child, td:first-child { text-align: left; }
+th {
+  font-family: var(--font-label);
+  font-variant-caps: all-small-caps;
+  color: var(--dimmer);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 2.2rem;
+  transform: translateX(-50%);
+  z-index: 30;
+  color: var(--dim);
+  font-style: italic;
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0ms !important; }
+}

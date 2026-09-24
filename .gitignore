@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+tools/.cache
+.tmp
+*.log
+.env*
+.vite
+
+# Only the README is published as markdown.
+*.md
+!README.md

@@ -1,0 +1,31 @@
+{
+  "corpusVersion": "79728221affc",
+  "assetVersion": "ca1a9c5cdc02",
+  "builtAt": "2026-09-24T05:59:08.708Z",
+  "wordCount": 122953,
+  "shardSize": 1000,
+  "shardCount": 123,
+  "tierCounts": {
+    "10": 3003,
+    "20": 4780,
+    "35": 14954,
+    "40": 2559,
+    "50": 10733,
+    "55": 3300,
+    "60": 6297,
+    "70": 24266,
+    "80": 53061
+  },
+  "sources": [
+    {
+      "name": "Wiktionary (via kaikki.org wiktextract)",
+      "url": "https://kaikki.org/dictionary/raw-wiktextract-data.jsonl.gz",
+      "licence": "CC BY-SA 4.0 (adaptation of Wiktionary text, CC BY-SA / GFDL)"
+    },
+    {
+      "name": "SCOWL 2020.12.07",
+      "url": "https://downloads.sourceforge.net/wordlist/scowl-2020.12.07.tar.gz",
+      "licence": "SCOWL licence (see ATTRIBUTION.txt)"
+    }
+  ]
+}

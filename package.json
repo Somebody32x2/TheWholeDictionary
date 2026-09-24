@@ -1,0 +1,33 @@
+{
+  "name": "thewholedictionary",
+  "version": "1.0.0",
+  "description": "Walk an entire English dictionary one word at a time and measure your vocabulary",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "bun scripts/dev.mjs",
+    "dev:server": "bun server/index.js",
+    "build": "bun --bun vite build && bun scripts/gen-sw.mjs",
+    "start": "bun server/index.js",
+    "typecheck": "bunx svelte-check --threshold error",
+    "test": "bun test",
+    "corpus": "bun tools/build-corpus.mjs --out corpus --tier-max 80",
+    "icons": "bun scripts/make-icons.mjs",
+    "dev:client": "bun --bun vite"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@types/bun": "^1.4.2",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  }
+}
