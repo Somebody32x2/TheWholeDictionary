@@ -10,8 +10,9 @@ of quiet control boxes under the word shows what the current step accepts.
 Response time is measured from the word appearing to the reveal, so reading the
 definition never counts against you.
 
-- **122,953 headwords** with definitions, built from Wiktionary and SCOWL, with
-  inflected forms (`walked`, `killed`) folded into their lemmas.
+- **115,557 headwords** with definitions, built from Wiktionary and SCOWL, with
+  inflected forms (`walked`, `killed`) and run-on derivatives (`predacity`,
+  "the quality of being predaceous") folded into the words they come from.
 - **Offline-first PWA.** The dictionary arrives 1,000 words at a time; the
   whole thing cached is under 5 MB.
 - **Starred words and saved lists**, publishable as read-only pages at a short
@@ -79,8 +80,9 @@ unstarring on one device is never undone by another.
 
 **Corpus.** `tools/build-corpus.mjs` intersects SCOWL (which strings are English
 words, and how common) with the kaikki.org Wiktionary extract (what they mean).
-It drops proper nouns, abbreviations, redirects and inflected forms that have no
-meaning of their own, and keeps field labels such as "(nautical)" on specialist
+It drops proper nouns, abbreviations, redirects, inflected forms that have no
+meaning of their own, and derivatives whose only definition points at another
+headword ("in a predatory manner"), and keeps field labels such as "(nautical)" on specialist
 senses. `corpusVersion` hashes the word list and decides word ids; when it
 changes, existing profiles are re-keyed by headword automatically.
 

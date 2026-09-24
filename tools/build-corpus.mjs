@@ -52,6 +52,41 @@ const REJECT_SENSE_TAGS = new Set([
 /** Senses that survive tag filtering but are still redirects in prose. */
 const REDIRECT_GLOSS_RE = /^(alternative (form|spelling)|plural|obsolete form|misspelling|synonym|initialism|abbreviation|clipping|inflection|past participle|present participle|simple past) of\b/i;
 
+/**
+ * Definitions that only point at another word: "The quality of being
+ * predaceous", "In a predatory manner", "The act of mobilizing". A printed
+ * dictionary lists such derivatives under the main entry rather than as
+ * entries of their own; here each would cost a separate answer while adding
+ * no meaning the user has not already been asked about. The capture group is
+ * the word pointed at.
+ */
+const POINTER_GLOSS_RES = [
+  /^(?:the )?(?:quality|state|condition|fact|property|characteristic|trait|degree|measure)(?: or (?:quality|state|condition|fact|property|characteristic))? of being (?:very )?([a-z][a-z'-]*)\.?$/i,
+  /^in an? ([a-z][a-z'-]*) (?:manner|way|fashion)\.?$/i,
+  /^in a (?:manner|way) that is ([a-z][a-z'-]*)\.?$/i,
+  /^to an? ([a-z][a-z'-]*) (?:degree|extent)\.?$/i,
+  /^the (?:act|action|process|practice)(?: or (?:process|act|practice))? of ([a-z][a-z'-]*ing)\.?$/i,
+];
+
+/**
+ * The headwords a pointer gloss may mean. "-ing" targets are verbs, so
+ * `mobilizing` may be `mobilize`, `stopping` may be `stop`, `running` may be
+ * `run`: every plausible stem is offered and whichever exists wins.
+ */
+function pointerTargets(gloss) {
+  for (const re of POINTER_GLOSS_RES) {
+    const m = re.exec(gloss);
+    if (!m) continue;
+    const word = m[1].toLowerCase();
+    if (!word.endsWith('ing')) return [word];
+    const stem = word.slice(0, -3);
+    const out = [stem, `${stem}e`];
+    if (stem.length > 2 && stem.at(-1) === stem.at(-2)) out.push(stem.slice(0, -1));
+    return out;
+  }
+  return null;
+}
+
 /** De-prioritised, not rejected: a word whose only sense is archaic still exists. */
 const WEAK_SENSE_TAGS = new Set(['obsolete', 'archaic', 'rare', 'dated']);
 
@@ -244,8 +279,9 @@ function senseGloss(sense) {
 
   const leaf = cleanGloss(fieldLabel && !continuation ? rawLeaf : joined);
   if (!leaf || leaf.length < 2) return null;
-  if (REDIRECT_GLOSS_RE.test(cleanGloss(joined))) return null;
-  return { gloss: leaf, rank, plain };
+  const bare = cleanGloss(joined);
+  if (REDIRECT_GLOSS_RE.test(bare)) return null;
+  return { gloss: leaf, rank, plain, pointer: pointerTargets(bare) };
 }
 
 /**
@@ -288,8 +324,13 @@ async function scanDump(dumpPath, tierMap, sampleLines) {
   /** word -> the lemmas Wiktionary says it is an inflected form of. */
   /** @type {Map<string, Set<string>>} */
   const inflectionOf = new Map();
+  /** Words with at least one sense that is more than a pointer to another word. */
+  const substantive = new Set();
+  /** word -> the words its pointer-only senses point at. */
+  /** @type {Map<string, Set<string>>} */
+  const pointsAt = new Map();
   const drops = {
-    notEnglish: 0, notInScowl: 0, badPos: 0, noUsableSense: 0, parseError: 0, specialistInflection: 0,
+    notEnglish: 0, notInScowl: 0, badPos: 0, noUsableSense: 0, parseError: 0, specialistInflection: 0, pointerOnly: 0,
   };
   let lines = 0;
   let englishRecords = 0;
@@ -343,8 +384,17 @@ async function scanDump(dumpPath, tierMap, sampleLines) {
       if (!found) continue;
       count++;
       plain ||= found.plain;
-      // Normal beats register beats obsolete; within a rank, the first wins.
-      if (!best || found.rank < best.rank) best = found;
+      if (found.pointer) {
+        let targets = pointsAt.get(word);
+        if (!targets) { targets = new Set(); pointsAt.set(word, targets); }
+        for (const t of found.pointer) if (t !== word) targets.add(t);
+      } else {
+        substantive.add(word);
+      }
+      // Normal beats register beats obsolete; within a rank a real definition
+      // beats one that only points at another word; otherwise the first wins.
+      const key = found.rank * 2 + (found.pointer ? 1 : 0);
+      if (!best || key < best.rank * 2 + (best.pointer ? 1 : 0)) best = found;
     }
     if (!best) { drops.noUsableSense++; continue; }
 
@@ -377,6 +427,23 @@ async function scanDump(dumpPath, tierMap, sampleLines) {
     if (![...lemmas].some((lemma) => defs.has(lemma))) continue;
     defs.delete(word);
     drops.specialistInflection++;
+  }
+
+  /*
+   * A word whose every definition only points at another word - `predacity`,
+   * "The quality of being predaceous" - is a run-on derivative, not a separate
+   * item of vocabulary: knowing `predaceous` is knowing it. It is dropped when
+   * the word it points at is itself an English headword (a SCOWL word counts
+   * even without a definition of its own, since that means it is a variant or
+   * inflection of one that has). The set is taken before any deletion, so a
+   * chain of pointers collapses onto the word at its end.
+   */
+  const known = new Set(defs.keys());
+  for (const [word, targets] of pointsAt) {
+    if (substantive.has(word) || !defs.has(word)) continue;
+    if (![...targets].some((t) => known.has(t) || tierMap.has(t))) continue;
+    defs.delete(word);
+    drops.pointerOnly++;
   }
   return { defs, drops, lines, englishRecords };
 }
@@ -564,7 +631,7 @@ async function main() {
 
   const words = [...defs.keys()].sort();
   console.log(`  ${fmt(lines)} lines read, ${fmt(englishRecords)} English records for candidate words`);
-  console.log(`  dropped: not English ${fmt(drops.notEnglish)}, not in SCOWL ${fmt(drops.notInScowl)}, unusable pos ${fmt(drops.badPos)}, no usable sense ${fmt(drops.noUsableSense)}, unparseable ${fmt(drops.parseError)}, specialist-only inflection ${fmt(drops.specialistInflection)}`);
+  console.log(`  dropped: not English ${fmt(drops.notEnglish)}, not in SCOWL ${fmt(drops.notInScowl)}, unusable pos ${fmt(drops.badPos)}, no usable sense ${fmt(drops.noUsableSense)}, unparseable ${fmt(drops.parseError)}, specialist-only inflection ${fmt(drops.specialistInflection)}, pointer-only ${fmt(drops.pointerOnly)}`);
   console.log(`  ${fmt(words.length)} headwords kept, ${fmt(tierMap.size - words.length)} SCOWL words had no definition`);
 
   if (words.length === 0) throw new Error('no headwords survived; refusing to emit an empty corpus');
