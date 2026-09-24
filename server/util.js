@@ -1,4 +1,9 @@
+import net from 'node:net';
+
 import { config } from './config.js';
+import { edgeBlockList, inEdge } from './edges.js';
+
+const trustedEdges = config.clientIpHeader ? edgeBlockList(config.clientIpHeaderFrom) : null;
 
 /**
  * Work out who is actually talking to us, counting proxy hops from the right.
@@ -33,7 +38,12 @@ export function resolveIp(remoteAddress, forwardedFor) {
 }
 
 export function clientIp(req) {
-  return resolveIp(req.socket?.remoteAddress, req.headers?.['x-forwarded-for']);
+  const edge = resolveIp(req.socket?.remoteAddress, req.headers?.['x-forwarded-for']);
+  if (trustedEdges && inEdge(trustedEdges, edge)) {
+    const claimed = String(req.headers?.[config.clientIpHeader] ?? '').split(',')[0].trim();
+    if (net.isIP(claimed)) return claimed;
+  }
+  return edge;
 }
 
 /** True for a request that reached this process without crossing a network. */

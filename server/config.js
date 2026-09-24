@@ -76,6 +76,17 @@ export const config = {
    * address and walk straight through every rate limit here.
    */
   trustProxy: trustProxySetting(process.env.TRUST_PROXY),
+
+  /**
+   * Behind a CDN whose forwarded headers the reverse proxy discards, read the
+   * visitor's address from the CDN's own header instead - e.g.
+   * CLIENT_IP_HEADER=cf-connecting-ip with CLIENT_IP_HEADER_FROM=cloudflare.
+   * The header is believed only when the edge address (resolved through
+   * TRUST_PROXY as usual) is inside CLIENT_IP_HEADER_FROM, so a request that
+   * bypasses the CDN cannot choose its own identity. See server/edges.js.
+   */
+  clientIpHeader: (process.env.CLIENT_IP_HEADER ?? '').trim().toLowerCase(),
+  clientIpHeaderFrom: process.env.CLIENT_IP_HEADER_FROM ?? '',
   isProduction: process.env.NODE_ENV === 'production',
 
   /**

@@ -30,6 +30,15 @@ const API = `http://127.0.0.1:${PORT}/api`;
 const PROXY_PORT = 8242;
 const PROXY_API = `http://127.0.0.1:${PROXY_PORT}/api`;
 
+/**
+ * A third instance playing a CDN behind a reverse proxy that discards the
+ * CDN's forwarded headers: the only X-Forwarded-For entry is the CDN edge, and
+ * the visitor's address arrives in CF-Connecting-IP. 203.0.113.0/24 stands in
+ * for the CDN's published ranges.
+ */
+const EDGE_PORT = 8243;
+const EDGE_API = `http://127.0.0.1:${EDGE_PORT}/api`;
+
 const N = 2048;
 const CORPUS = 'testcorpus01';
 
@@ -37,6 +46,8 @@ let server: ChildProcess;
 let proxied: ChildProcess;
 let dataDir: string;
 let proxyDataDir: string;
+let edge: ChildProcess;
+let edgeDataDir: string;
 
 async function waitFor(url: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -68,23 +79,33 @@ function boot(port: number, dir: string, extra: Record<string, string> = {}) {
 beforeAll(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twd-test-'));
   proxyDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twd-proxy-test-'));
+  edgeDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'twd-edge-test-'));
   // Generous on the main instance: nearly every test mints an account, and a
   // shared per-IP budget would make unrelated tests fail each other. The limit
   // itself is exercised on the proxied instance, where each test can present a
   // distinct client address.
   server = boot(PORT, dataDir, { ACCOUNT_CREATE_MAX: '500', PUBLISH_MAX_WORDS: '50' });
   proxied = boot(PROXY_PORT, proxyDataDir, { TRUST_PROXY: '2', ACCOUNT_CREATE_MAX: '10' });
+  edge = boot(EDGE_PORT, edgeDataDir, {
+    TRUST_PROXY: '1',
+    CLIENT_IP_HEADER: 'cf-connecting-ip',
+    CLIENT_IP_HEADER_FROM: '203.0.113.0/24',
+    ACCOUNT_CREATE_MAX: '3',
+  });
   server.stderr?.on('data', (d) => process.stderr.write(`[server] ${d}`));
   proxied.stderr?.on('data', (d) => process.stderr.write(`[proxied] ${d}`));
   await waitFor(`${API}/health`);
   await waitFor(`${PROXY_API}/health`);
+  await waitFor(`${EDGE_API}/health`);
 });
 
 afterAll(async () => {
   server?.kill();
   proxied?.kill();
+  edge?.kill();
   await fs.rm(dataDir, { recursive: true, force: true }).catch(() => {});
   await fs.rm(proxyDataDir, { recursive: true, force: true }).catch(() => {});
+  await fs.rm(edgeDataDir, { recursive: true, force: true }).catch(() => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -421,4 +442,37 @@ test('saved lists sync and merge through the server, removals included', async (
   await push(key, withLists([withoutWord(withWord(withWord(starred, 'dog', 100), 'cat', 200), 'dog', 300)]), 0);
   ({ state } = await pull(key));
   assert.deepEqual(listWords(state!.lists.find((l) => l.id === STARRED_ID)!), ['cat']);
+});
+
+// ---------------------------------------------------------------------------
+// Client address behind a CDN
+// ---------------------------------------------------------------------------
+
+async function viaEdge(edgeAddr: string, visitor: string) {
+  return (await fetch(`${EDGE_API}/account`, {
+    method: 'POST',
+    headers: { 'X-Forwarded-For': edgeAddr, 'CF-Connecting-IP': visitor },
+  })).status;
+}
+
+test('visitors behind a trusted edge get separate rate-limit budgets', async () => {
+  // Six different visitors through the same edge: none should inherit the
+  // others' budget, which is exactly what keying on the edge would cause.
+  const statuses: number[] = [];
+  for (let i = 0; i < 6; i++) statuses.push(await viaEdge('203.0.113.9', `192.0.2.${10 + i}`));
+  assert.deepEqual(statuses, [200, 200, 200, 200, 200, 200]);
+});
+
+test('one visitor behind a trusted edge is still limited', async () => {
+  const statuses: number[] = [];
+  for (let i = 0; i < 4; i++) statuses.push(await viaEdge('203.0.113.9', '192.0.2.99'));
+  assert.deepEqual(statuses, [200, 200, 200, 429]);
+});
+
+test('the visitor header is ignored from outside the trusted edge', async () => {
+  // A direct hit on the origin can send any CF-Connecting-IP it likes; it must
+  // not buy a fresh identity per request.
+  const statuses: number[] = [];
+  for (let i = 0; i < 4; i++) statuses.push(await viaEdge('198.51.100.77', `192.0.2.${200 + i}`));
+  assert.deepEqual(statuses, [200, 200, 200, 429]);
 });

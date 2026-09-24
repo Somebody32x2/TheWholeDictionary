@@ -110,6 +110,7 @@ built-in health check).
 | --- | --- |
 | build arg + env `BASE_PATH` | mount point, e.g. `/dictionary`; omit for the root |
 | env `TRUST_PROXY` | number of reverse proxies in front (default `1`) |
+| env `CLIENT_IP_HEADER` + `CLIENT_IP_HEADER_FROM` | behind a CDN whose forwarded headers the proxy drops, e.g. `cf-connecting-ip` + `cloudflare`; the header is trusted only from those ranges |
 | env `SYNC_PEPPER` | optional; overrides the generated pepper |
 | volume `/data` | profiles and published lists — **required** |
 | port `8080` | HTTP |
